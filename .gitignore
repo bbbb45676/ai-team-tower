@@ -1,0 +1,15 @@
+node_modules/
+
+# 大樓專用瀏覽器的設定檔（含登入狀態）
+.browser-profile/
+
+# 對外分享金鑰
+.share-token
+
+# 備份與執行期資料
+backups/
+.tower/
+workspaces/
+
+# 範例專案上傳的素材
+examples/demo-project/assets/uploads/

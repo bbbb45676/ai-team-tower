@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tower-mock",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.mjs", "--mock"],
+      "port": 7777
+    },
+    {
+      "name": "tower",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.mjs"],
+      "port": 7777
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "ai-team-tower",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI 團隊大樓：把 Claude Code 團隊變成一棟看得見的 3D 辦公大樓。發布需求、審核各部門方案、看任務報告。",
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.mjs",
+    "mock": "node server.mjs --mock",
+    "login": "node scripts/claude.mjs auth login",
+    "status": "node scripts/claude.mjs auth status",
+    "backup": "node scripts/backup-now.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.312",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  }
+}

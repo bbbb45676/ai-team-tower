@@ -1,5 +1,5 @@
 {
-  "port": 7777,
+  "port": 7788,
   "engine": "claude-code",
   "model": null,
   "maxTurnsPlan": 25,

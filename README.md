@@ -27,7 +27,7 @@ npm install --omit=optional
 npm run mock
 ```
 
-打開 http://localhost:7777 ，會看到範例大樓「小島麵包坊」。模擬模式下 Claude 的回應都是假的，用來熟悉介面。
+打開 http://localhost:7788 ，會看到範例大樓「小島麵包坊」。模擬模式下 Claude 的回應都是假的，用來熟悉介面。
 
 真的要讓 AI 工作時：
 

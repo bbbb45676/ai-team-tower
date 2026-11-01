@@ -15,7 +15,7 @@ import { browserConfig, browserUp, ensureBrowser } from './lib/towerBrowser.mjs'
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CFG = JSON.parse(fs.readFileSync(process.env.TOWER_CONFIG ? path.resolve(process.env.TOWER_CONFIG) : path.join(ROOT, 'tower.config.json'), 'utf8'));
-const PORT = +process.env.TOWER_PORT || CFG.port || 7777;
+const PORT = +process.env.TOWER_PORT || CFG.port || 7788;
 const PUBLIC = path.join(ROOT, 'public');
 
 const MOCK = process.argv.includes('--mock');

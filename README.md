@@ -18,12 +18,13 @@
 ## 需求
 
 - Node.js 18.17 以上
-- 已登入的 Claude Code（Claude 桌面版內建的那份，或自己安裝的 `claude`）。找不到時可以用環境變數 `CLAUDE_CODE_PATH` 指定執行檔。
+- Claude Code（Claude 桌面版內建的那份，或自己安裝的 `claude`）。找不到時可以用環境變數 `CLAUDE_CODE_PATH` 指定執行檔。
+- 以下其中一種登入方式（見下方「登入方式」）：Claude 訂閱帳號，或 Anthropic API 金鑰。
 
 ## 快速開始
 
 ```bash
-npm install --omit=optional
+npm install
 npm run mock
 ```
 
@@ -32,12 +33,20 @@ npm run mock
 真的要讓 AI 工作時：
 
 ```bash
-npm run login   # 第一次：登入大樓使用的 Claude Code
 npm start
 ```
 
-- `npm install --omit=optional` 會略過 SDK 內建的 Claude Code 主程式（約 300MB），改用你電腦上已安裝的版本。
-- 預設引擎 `claude-code` 在背景驅動你電腦上的 Claude Code，用的是你自己的登入與方案額度。想改用 Agent SDK＋API 金鑰，把設定檔的 `engine` 改成 `"sdk"`，並設定環境變數 `ANTHROPIC_API_KEY`。
+## 登入方式
+
+大樓在背景驅動你電腦上的 Claude Code，有兩種登入方式可以選，隨時可以在工具列的「登入」按鈕切換：
+
+| 方式 | 怎麼設定 | 費用 |
+|---|---|---|
+| **訂閱登入**（預設） | 第一次先執行 `npm run login`，在瀏覽器用你的 Claude 帳號登入 | 算在你的訂閱方案額度裡（Pro、Max 等） |
+| **API 金鑰** | 在「登入」選單貼上金鑰（`sk-ant-…`），或設定環境變數 `ANTHROPIC_API_KEY` | 依實際用量計費 |
+
+- 選擇和在介面貼上的金鑰只存在本機的 `.tower-local.json`（已列在 `.gitignore`），不會進版本控制，也不會傳給展示模式的訪客。
+- 也可以在 `tower.config.json` 用 `"auth": "subscription"` 或 `"auth": "api"` 指定預設值；在介面切換過之後，以介面的選擇為準。
 
 ## 範例專案
 
@@ -70,7 +79,7 @@ npm start
 | 欄位 | 說明 |
 |---|---|
 | `port` | 伺服器埠號（也可用環境變數 `TOWER_PORT`） |
-| `engine` | `claude-code`（預設）或 `sdk` |
+| `auth` | 預設的登入方式：`subscription`（訂閱登入，預設）或 `api`（API 金鑰）；可在介面切換 |
 | `model` | 指定模型，`null` 表示依工作自動選 |
 | `models` | 自動選模型的對照：`{ "plan": "opus", "light": "haiku", "standard": "sonnet", "heavy": "opus" }` |
 | `maxTurnsPlan` / `maxTurnsRun` | 規劃與執行的回合上限 |

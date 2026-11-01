@@ -1,5 +1,5 @@
 // AI 團隊大樓：本機橋接伺服器
-// 把 Claude Agent SDK 的工作流程（需求 → 部門方案 → 主管審核 → 執行 → 報告）接到 3D 大樓介面。
+// 在背景驅動本機 Claude Code，把團隊的工作流程（需求 → 部門方案 → 主管審核 → 執行 → 報告）接到 3D 大樓介面。
 import http from 'node:http';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
@@ -19,13 +19,32 @@ const PORT = +process.env.TOWER_PORT || CFG.port || 7788;
 const PUBLIC = path.join(ROOT, 'public');
 
 const MOCK = process.argv.includes('--mock');
-const ENGINE = MOCK ? 'mock' : (CFG.engine || 'claude-code');
-let sdkQuery = null, sdkError = '';
-if (ENGINE === 'sdk') {
-  try { ({ query: sdkQuery } = await import('@anthropic-ai/claude-agent-sdk')); }
-  catch (e) { sdkError = '找不到 @anthropic-ai/claude-agent-sdk，請先在此資料夾執行 npm install。'; }
+
+/* ---------- 登入方式：訂閱登入或 API 金鑰（可在大樓工具列切換） ---------- */
+// 選擇與金鑰只存在本機的 .tower-local.json（已列在 .gitignore），不會進版本控制
+const LOCAL_FILE = path.join(ROOT, '.tower-local.json');
+let LOCAL = {}; try { LOCAL = JSON.parse(fs.readFileSync(LOCAL_FILE, 'utf8')) || {}; } catch {}
+const AUTH_MODES = ['subscription', 'api'];
+const AUTH_LABEL = { subscription: '訂閱登入', api: 'API 金鑰' };
+const authMode = () => AUTH_MODES.includes(LOCAL.auth) ? LOCAL.auth : AUTH_MODES.includes(CFG.auth) ? CFG.auth : 'subscription';
+const apiKey = () => LOCAL.apiKey || process.env.ANTHROPIC_API_KEY || '';
+function authInfo() { const k = apiKey(); return { auth: authMode(), apiKeySet: !!k, apiKeySource: LOCAL.apiKey ? 'local' : process.env.ANTHROPIC_API_KEY ? 'env' : '', apiKeyHint: k ? '…' + k.slice(-4) : '' }; }
+function saveLocal() { fs.writeFileSync(LOCAL_FILE, JSON.stringify(LOCAL, null, 1)); }
+// 給 Claude Code 的環境變數：訂閱登入就拿掉金鑰（改用這台電腦上的登入），API 模式就帶上金鑰
+const HOST_SESSION_VARS = ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_HOST_SESSION_ID', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PID', 'CLAUDE_AGENT_SDK_VERSION', 'CLAUDE_AGENT_SDK_MCP_NO_PREFIX', 'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_OAUTH_SCOPES', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_ACCOUNT_UUID', 'CLAUDE_CODE_ORGANIZATION_UUID', 'CLAUDE_CODE_USER_EMAIL'];
+function authEnv() {
+  const env = { ...process.env };
+  if (authMode() === 'api') {
+    const k = apiKey(); if (!k) throw new Error('登入方式是「API 金鑰」，但還沒設定金鑰。請在工具列的「登入」填入金鑰，或改用訂閱登入。');
+    env.ANTHROPIC_API_KEY = k;
+    // 從 Claude 桌面版的終端機啟動時，會繼承桌面版這個工作階段的登入變數，它們會蓋過金鑰
+    for (const v of HOST_SESSION_VARS) delete env[v];
+  } else delete env.ANTHROPIC_API_KEY;
+  return env;
 }
-let query = null;  // 依引擎決定，見下方 pickEngine()
+const ENGINE = MOCK ? 'mock' : 'claude-code';
+let engineError = '';
+let query = null;  // 模擬模式用假資料，其他時候在背景驅動本機的 Claude Code
 
 // 模擬模式：不呼叫 Claude，用假資料走完整個流程，方便測試介面
 async function* mockQuery({ prompt, options }) {
@@ -94,13 +113,12 @@ function findClaude() {
     const exe = path.join(dir, process.platform === 'win32' ? 'claude.exe' : 'claude');
     if (dir && fs.existsSync(exe)) return exe;
   }
-  return undefined; // 交給 SDK 自帶的執行檔
+  return undefined;
 }
 const CLAUDE_PATH = findClaude();
 if (ENGINE === 'mock') query = mockQuery;
-else if (ENGINE === 'sdk') query = sdkQuery;
 else if (CLAUDE_PATH) query = cliQuery;
-else sdkError = '找不到 Claude Code。請安裝 Claude 桌面版或 Claude Code，或在環境變數 CLAUDE_CODE_PATH 指定 claude 執行檔。';
+else engineError = '找不到 Claude Code。請安裝 Claude 桌面版或 Claude Code，或在環境變數 CLAUDE_CODE_PATH 指定 claude 執行檔。';
 
 /* ---------- 引擎：在背景驅動本機的 Claude Code（用你自己的登入） ---------- */
 const runs = new Map(); // runId -> { canUseTool, signal }
@@ -120,8 +138,7 @@ async function* cliQuery({ prompt, options }) {
   if (options.resume) args.push('--resume', options.resume);
   if (options.allowedTools?.length) args.push('--allowedTools', ...options.allowedTools);
   if (options.disallowedTools?.length) args.push('--disallowedTools', ...options.disallowedTools);
-  const env = { ...process.env, MCP_TOOL_TIMEOUT: String(24 * 3600 * 1000) };
-  delete env.ANTHROPIC_API_KEY; // 一律用這台電腦上 Claude Code 的登入
+  const env = { ...(options.env || authEnv()), MCP_TOOL_TIMEOUT: String(24 * 3600 * 1000) };
   const child = spawn(CLAUDE_PATH, args, { cwd: options.cwd, env, windowsHide: true });
   const onAbort = () => { try { child.kill(); } catch {} };
   options.abortController.signal.addEventListener('abort', onAbort);
@@ -314,7 +331,7 @@ async function runClaude(args) {
   catch (e) { emit('activity', { building: args.t.building, taskId: args.t.id, dept: args.dept || 'pm', kind: 'end', summary: '中斷：' + String(e.message || e).slice(0, 60) }); await backupRun(args, '執行後（中斷）'); throw e; }
 }
 async function runClaudeInner({ t, dept, prompt, mode, resume, phaseName = '', label, model, browser }) {
-  if (!query) throw new Error(sdkError);
+  if (!query) throw new Error(engineError);
   const b = buildings.find(x => x.id === t.building);
   const rt = runtime.get(t.id) || { abort: new AbortController() };
   runtime.set(t.id, rt);
@@ -353,7 +370,7 @@ async function runClaudeInner({ t, dept, prompt, mode, resume, phaseName = '', l
   if (browser?.length && !planning) { options.browserHosts = browser; options.allowedTools = [...options.allowedTools, 'mcp__browser']; }
   const useModel = model || CFG.model || null;
   if (useModel) options.model = useModel;
-  if (CLAUDE_PATH) options.pathToClaudeCodeExecutable = CLAUDE_PATH;
+  if (ENGINE !== 'mock') options.env = authEnv(); // 依登入方式決定帶不帶 API 金鑰
   if (resume) options.resume = resume;
   if (CFG.maxBudgetUsdPerRun) options.maxBudgetUsd = CFG.maxBudgetUsdPerRun;
 
@@ -1314,9 +1331,9 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 function send(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); }
 async function body(req) { let s = ''; for await (const c of req) { s += c; if (s.length > 2e6) throw new Error('內容太大'); } return s ? JSON.parse(s) : {}; }
 function state(ext) {
-  if (ext) { const st = state(false), ok = SHARE_BUILDINGS(); return { ...st, share: true, buildings: st.buildings.filter(b => ok.includes(b.id)).map(b => ({ ...b, projectDir: '' })), tasks: st.tasks.filter(t => ok.includes(t.building)), approvals: [], claudePath: '' }; }
+  if (ext) { const st = state(false), ok = SHARE_BUILDINGS(); return { ...st, share: true, buildings: st.buildings.filter(b => ok.includes(b.id)).map(b => ({ ...b, projectDir: '' })), tasks: st.tasks.filter(t => ok.includes(t.building)), approvals: [], claudePath: '', apiKeyHint: '' }; }
   return {
-    live: true, sdk: !!query, sdkError, engine: ENGINE, claudePath: CLAUDE_PATH || '', apiKey: !!process.env.ANTHROPIC_API_KEY,
+    live: true, ready: !!query, engineError, engine: ENGINE, claudePath: CLAUDE_PATH || '', ...authInfo(),
     depts: Object.fromEntries(Object.entries(DEPTS).map(([k, v]) => [k, v.name])),
     buildings: buildings.map(b => ({ id: b.id, name: b.name, projectDir: b.dir, counts: b.counts, departments: b.departments || null, pm: b.pm ? { name: b.pm.name } : null })),
     tasks: [...tasks.values()],
@@ -1349,6 +1366,15 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/')) {
       if (req.method !== 'GET' && req.headers['x-tower'] !== '1') return send(res, 403, { error: '拒絕跨站請求' });
       if (p === '/api/state') return send(res, 200, state(ext));
+      if (p === '/api/auth' && req.method === 'POST') {
+        const bd = await body(req);
+        if (bd.clearKey) delete LOCAL.apiKey;
+        if (typeof bd.apiKey === 'string' && bd.apiKey.trim()) { const k = bd.apiKey.trim(); if (!/^sk-ant-[\w-]{20,}$/.test(k)) return send(res, 400, { error: '金鑰格式不對，應該是 sk-ant- 開頭的一長串文字' }); LOCAL.apiKey = k; }
+        if (bd.mode) { if (!AUTH_MODES.includes(bd.mode)) return send(res, 400, { error: '不支援這種登入方式' }); if (bd.mode === 'api' && !apiKey()) return send(res, 400, { error: '請先填入 API 金鑰' }); LOCAL.auth = bd.mode; }
+        if (authMode() === 'api' && !apiKey()) LOCAL.auth = 'subscription'; // 金鑰刪掉了就回到訂閱登入
+        saveLocal(); emit('auth', authInfo()); console.log('登入方式：' + AUTH_LABEL[authMode()]);
+        return send(res, 200, authInfo());
+      }
       if (p === '/api/browser' && req.method === 'GET') { await checkBrowser(); return send(res, 200, { up: browserIsUp, exe: !!BROWSER.exe }); }
       if (p === '/api/browser/open' && req.method === 'POST') { const bd = await body(req); const hosts = [...new Set(Object.values(AUTO_BROWSER).flat())], hostOk = s => { try { const h = new URL(s).hostname; return new URL(s).protocol === 'https:' && hosts.some(a => h === a || h.endsWith('.' + a)); } catch { return false; } }; const u = hostOk(bd.url) ? bd.url : hosts[0] ? 'https://' + hosts[0] + '/' : 'about:blank'; const ok = await ensureBrowser(BROWSER, u); browserIsUp = ok; return send(res, ok ? 200 : 500, ok ? { up: true } : { error: '大樓瀏覽器開不起來（找不到 Brave／Chrome，或連接埠被占用）' }); }
       // 人工處理：上傳素材、打開資料夾或檔案、開工坊（只限本機；展示模式的 POST 一律被擋）
@@ -1403,17 +1429,17 @@ const server = http.createServer(async (req, res) => {
         if (req.method !== 'POST') return send(res, 405, { error: 'method' });
         const bd = await body(req), st = apState(b);
         if (apm[2] === 'ask') {
-          if (!query) return send(res, 400, { error: sdkError });
+          if (!query) return send(res, 400, { error: engineError });
           const text = String(bd.text || '').trim(); if (!text) return send(res, 400, { error: '問題不能是空的' });
           ownerAsk(b, String(bd.key || ''), text.slice(0, 2000)); return send(res, 200, apView(b));
         }
         if (apm[2] === 'reply') {
-          if (!query) return send(res, 400, { error: sdkError });
+          if (!query) return send(res, 400, { error: engineError });
           const text = String(bd.text || '').trim(); if (!text) return send(res, 400, { error: '回覆不能是空的' });
           ownerReply(b, String(bd.key || ''), text.slice(0, 4000)); return send(res, 200, apView(b));
         }
         if (apm[2] === 'run') {
-          if (!query) return send(res, 400, { error: sdkError });
+          if (!query) return send(res, 400, { error: engineError });
           const R = routinesOf(b), r = R?.routines.find(x => x.id === bd.id); if (!r) return send(res, 404, { error: '找不到這個例行工作' });
           if ((r.requires || []).some(c => LOCAL_ONLY.has(c))) return send(res, 400, { error: '這是地端模型的工作，大樓不會交給雲端 AI' });
           if (needsHandoff(r)) return send(res, 400, { error: '這項工作要用瀏覽器或你在場，背景沒辦法執行；請複製指令給桌面版 Claude' });
@@ -1436,8 +1462,8 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && !gm[2]) return send(res, 200, goalsView(b));
         if (req.method !== 'POST') return send(res, 405, { error: 'method' });
         const g = loadGoals(b), bd = await body(req);
-        if (gm[2] === 'import') { if (!query) return send(res, 400, { error: sdkError }); if (bd.source) g.source = bd.source; if (g.status === 'drafting') return send(res, 409, { error: (b.pm?.name || 'PM') + '正在處理中' }); importGoals(b, bd.feedback).catch(() => {}); return send(res, 200, { ok: true }); }
-        if (gm[2] === 'chat') { if (!query) return send(res, 400, { error: sdkError }); const text = String(bd.text || '').trim(); if (!text) return send(res, 400, { error: '請輸入要調整的內容' }); if (g.status === 'drafting' || g.asking) return send(res, 409, { error: (b.pm?.name || 'PM') + '正在處理上一件事，等他完成再交辦' }); (bd.mode === 'ask' ? askGoals(b, text) : importGoals(b, text)).catch(() => {}); return send(res, 200, { ok: true }); }
+        if (gm[2] === 'import') { if (!query) return send(res, 400, { error: engineError }); if (bd.source) g.source = bd.source; if (g.status === 'drafting') return send(res, 409, { error: (b.pm?.name || 'PM') + '正在處理中' }); importGoals(b, bd.feedback).catch(() => {}); return send(res, 200, { ok: true }); }
+        if (gm[2] === 'chat') { if (!query) return send(res, 400, { error: engineError }); const text = String(bd.text || '').trim(); if (!text) return send(res, 400, { error: '請輸入要調整的內容' }); if (g.status === 'drafting' || g.asking) return send(res, 409, { error: (b.pm?.name || 'PM') + '正在處理上一件事，等他完成再交辦' }); (bd.mode === 'ask' ? askGoals(b, text) : importGoals(b, text)).catch(() => {}); return send(res, 200, { ok: true }); }
         if (gm[2] === 'approve') { if (!g.draft) return send(res, 400, { error: '沒有待審核的草案' }); const old = new Map(g.goals.map(x => [x.id, x])); g.goals = g.draft.goals.map(x => { const o = old.get(x.id); return o ? { ...x, manualStatus: o.manualStatus, manualProgress: o.manualProgress } : x; }); g.schedule = g.draft.schedule; if (g.chat?.length) g.chat.push({ role: 'sys', text: '主管核准了新版本', at: Date.now() }); g.summary = g.draft.summary; g.draft = null; g.status = 'approved'; g.approvedAt = Date.now(); saveGoals(b); return send(res, 200, goalsView(b)); }
         if (gm[2] === 'discard') { if (g.draft && g.chat?.length) g.chat.push({ role: 'sys', text: '主管捨棄了這版草案', at: Date.now() }); g.draft = null; g.status = g.goals.length ? 'approved' : 'none'; saveGoals(b); return send(res, 200, goalsView(b)); }
         if (gm[2] === 'update') {
@@ -1523,7 +1549,7 @@ const server = http.createServer(async (req, res) => {
       }
       let m;
       if ((m = p.match(/^\/api\/b\/([\w-]+)\/tasks$/)) && req.method === 'POST') {
-        if (!query) return send(res, 400, { error: sdkError });
+        if (!query) return send(res, 400, { error: engineError });
         const b = buildings.find(x => x.id === m[1]); if (!b) return send(res, 404, { error: '找不到大樓' });
         const { text, goalId } = await body(req); if (!text?.trim()) return send(res, 400, { error: '請輸入需求' });
         return send(res, 200, createTask(b.id, text.trim(), goalId));
@@ -1533,7 +1559,7 @@ const server = http.createServer(async (req, res) => {
         const b = await body(req);
         if (m[3] && b.action === 'ask') {
           const x = t.rounds.at(-1).depts[m[3]]; if (!x) return send(res, 404, { error: '這一輪沒有這個部門' });
-          if (!query) return send(res, 400, { error: sdkError });
+          if (!query) return send(res, 400, { error: engineError });
           const q = String(b.text || '').trim(); if (!q) return send(res, 400, { error: '請先寫下你的問題' });
           if (x.status !== 'review') return send(res, 400, { error: '這份方案不在待審核狀態，不能提問' });
           if (x.asking) return send(res, 409, { error: '部門正在回答上一個問題，等他回答完再問' });
@@ -1569,9 +1595,10 @@ server.requestTimeout = 0;      // 權限請求可能要等主管很久
 server.headersTimeout = 120000;
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`\nAI 團隊大樓已啟動：http://localhost:${PORT}`);
-  console.log(`引擎：${{ 'claude-code': '本機 Claude Code（用你的登入）', sdk: 'Claude Agent SDK（API 金鑰）', mock: '模擬模式（不呼叫 Claude）' }[ENGINE]}`);
+  console.log(`引擎：${{ 'claude-code': '本機 Claude Code', mock: '模擬模式（不呼叫 Claude）' }[ENGINE]}`);
+  if (ENGINE !== 'mock') console.log(`登入方式：${AUTH_LABEL[authMode()]}（可在大樓工具列的「登入」切換）`);
   if (ENGINE === 'claude-code') console.log(`Claude Code：${CLAUDE_PATH || '找不到'}`);
-  if (!query) console.log('⚠ ' + sdkError);
-  if (ENGINE === 'sdk' && !process.env.ANTHROPIC_API_KEY) console.log('⚠ SDK 引擎需要 ANTHROPIC_API_KEY。');
+  if (!query) console.log('⚠ ' + engineError);
+  if (ENGINE !== 'mock' && authMode() === 'api' && !apiKey()) console.log('⚠ 登入方式是 API 金鑰，但還沒設定金鑰。請在大樓工具列的「登入」填入，或設定環境變數 ANTHROPIC_API_KEY。');
   for (const b of buildings) console.log(`大樓「${b.name}」→ ${b.dir}`);
 });

@@ -6,6 +6,9 @@ node_modules/
 # 對外分享金鑰
 .share-token
 
+# 登入方式與 API 金鑰（只存在本機）
+.tower-local.json
+
 # 備份與執行期資料
 backups/
 .tower/

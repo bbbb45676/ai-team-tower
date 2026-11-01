@@ -14,7 +14,8 @@ import { isReadOnlyCommand } from './lib/readonly.mjs';
 import { browserConfig, browserUp, ensureBrowser } from './lib/towerBrowser.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const CFG = JSON.parse(fs.readFileSync(process.env.TOWER_CONFIG ? path.resolve(process.env.TOWER_CONFIG) : path.join(ROOT, 'tower.config.json'), 'utf8'));
+const CONFIG_FILE = process.env.TOWER_CONFIG ? path.resolve(process.env.TOWER_CONFIG) : path.join(ROOT, 'tower.config.json');
+const CFG = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
 const PORT = +process.env.TOWER_PORT || CFG.port || 7788;
 const PUBLIC = path.join(ROOT, 'public');
 
@@ -28,7 +29,7 @@ const AUTH_MODES = ['subscription', 'api'];
 const AUTH_LABEL = { subscription: '訂閱登入', api: 'API 金鑰' };
 const authMode = () => AUTH_MODES.includes(LOCAL.auth) ? LOCAL.auth : AUTH_MODES.includes(CFG.auth) ? CFG.auth : 'subscription';
 const apiKey = () => LOCAL.apiKey || process.env.ANTHROPIC_API_KEY || '';
-function authInfo() { const k = apiKey(); return { auth: authMode(), apiKeySet: !!k, apiKeySource: LOCAL.apiKey ? 'local' : process.env.ANTHROPIC_API_KEY ? 'env' : '', apiKeyHint: k ? '…' + k.slice(-4) : '' }; }
+function authInfo() { const k = apiKey(); return { auth: authMode(), chosen: !!LOCAL.auth, apiKeySet: !!k, apiKeySource: LOCAL.apiKey ? 'local' : process.env.ANTHROPIC_API_KEY ? 'env' : '', apiKeyHint: k ? '…' + k.slice(-4) : '' }; }
 function saveLocal() { fs.writeFileSync(LOCAL_FILE, JSON.stringify(LOCAL, null, 1)); }
 // 給 Claude Code 的環境變數：訂閱登入就拿掉金鑰（改用這台電腦上的登入），API 模式就帶上金鑰
 const HOST_SESSION_VARS = ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_HOST_SESSION_ID', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PID', 'CLAUDE_AGENT_SDK_VERSION', 'CLAUDE_AGENT_SDK_MCP_NO_PREFIX', 'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_OAUTH_SCOPES', 'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_ACCOUNT_UUID', 'CLAUDE_CODE_ORGANIZATION_UUID', 'CLAUDE_CODE_USER_EMAIL'];
@@ -47,6 +48,17 @@ let engineError = '';
 let query = null;  // 模擬模式用假資料，其他時候在背景驅動本機的 Claude Code
 
 // 模擬模式：不呼叫 Claude，用假資料走完整個流程，方便測試介面
+const MOCK_DESIGN = '```json\n' + JSON.stringify({
+  summary: '（模擬）依需求設計了企劃、內容、工程、品管四個部門，由總管統籌。',
+  pm: { name: '總管', description: '拆解需求、安排部門、彙整報告', prompt: '你是這個專案的總管（模擬）。', handbook: '# 00 總管手冊\n\n## 負責範圍\n- 拆解需求、安排先後順序。' },
+  departments: [
+    { id: 'planning', name: '企劃部', line: '製作線', members: 2, style: 'board', icon: 'target', description: '規劃需求與優先順序', prompt: '你是企劃部的企劃（模擬）。', handbook: '# 01 企劃部手冊\n\n## 負責範圍\n- 規劃需求。' },
+    { id: 'content', name: '內容部', line: '製作線', members: 2, style: 'research', icon: 'book', description: '撰寫文案與內容', prompt: '你是內容部的編輯（模擬）。', handbook: '# 02 內容部手冊\n\n## 負責範圍\n- 撰寫內容。' },
+    { id: 'engineering', name: '工程部', line: '製作線', members: 3, style: 'dev', icon: 'code', description: '實作功能', prompt: '你是工程部的工程師（模擬）。', handbook: '# 03 工程部手冊\n\n## 負責範圍\n- 實作功能。' },
+    { id: 'qa', name: '品管部', line: '製作線', members: 2, style: 'test', icon: 'check', description: '驗收與測試', prompt: '你是品管部的測試員（模擬）。', handbook: '# 04 品管部手冊\n\n## 負責範圍\n- 驗收。' },
+  ],
+  plan: '# 公司計畫書（模擬）\n\n## 年度目標\n- 完成第一版。',
+}) + '\n```';
 async function* mockQuery({ prompt, options }) {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const sid = options.resume || 'mock-' + crypto.randomUUID();
@@ -64,7 +76,8 @@ async function* mockQuery({ prompt, options }) {
     yield { type: 'user', session_id: sid, message: { content: [{ type: 'tool_result', content: name === 'Read' ? '# 示範專案\n這是測試用的專案資料夾。' : name === 'Glob' ? 'README.md' : '完成', is_error: false }] } };
   }
   let result;
-  if (/【方案提問】/.test(prompt)) result = '（模擬）會這樣規劃是因為專案裡已經有 `index.html` 與 `style.css`，直接沿用比較省工。\n\n- 依據：`README.md` 的專案說明\n- 設計部的配色還沒定，所以先用樣式變數保留彈性\n\n建議：如果你希望拆成多頁，可以叫我修改方案，把「會新增或修改的檔案」改成多個頁面。';
+  if (/【設計大樓】/.test(prompt)) result = MOCK_DESIGN;
+  else if (/【方案提問】/.test(prompt)) result = '（模擬）會這樣規劃是因為專案裡已經有 `index.html` 與 `style.css`，直接沿用比較省工。\n\n- 依據：`README.md` 的專案說明\n- 設計部的配色還沒定，所以先用樣式變數保留彈性\n\n建議：如果你希望拆成多頁，可以叫我修改方案，把「會新增或修改的檔案」改成多個頁面。';
   else if (/【目標提問】/.test(prompt)) result = '（模擬）這樣設定是因為計畫書第 3 節把**上線前**的人力放在設計與開發，所以先排這兩個部門。\n\n- 依據：`docs/company-plan.md` 導入時程\n- 推廣相關的目標等到第二階段才啟動\n\n建議：如果你想提早做行銷，可以叫我把行銷部的 Q1 目標往前移。';
   else if (/【目標調整】|【目標規劃】/.test(prompt)) {
     const m = prompt.match(/```json\n([\s\S]*?)\n```/);
@@ -234,11 +247,15 @@ function deptSystem(b, dept) {
 }
 
 /* ---------- 資料存取 ---------- */
-const buildings = CFG.buildings.map(b => {
+function normBuilding(b) {
   const o = { ...b, dir: path.resolve(ROOT, b.projectDir) };
   if (Array.isArray(b.departments)) o.deptMap = Object.fromEntries(b.departments.map(d => [d.id, d]));
   return o;
-});
+}
+const buildings = (CFG.buildings || []).map(normBuilding);
+// 正在由 Claude Code 設計、還沒正式加入的大樓（讓設計那一輪有地方放對話紀錄）
+const draftBuildings = new Map();
+const bldOf = id => buildings.find(x => x.id === id) || draftBuildings.get(id);
 const tasks = new Map();        // taskId -> task
 const runtime = new Map();      // taskId -> { abort: AbortController }
 const approvals = new Map();    // approvalId -> { ...info, resolve }
@@ -330,9 +347,9 @@ async function runClaude(args) {
   try { const out = await runClaudeInner(args); await backupRun(args, '執行後'); return out; }
   catch (e) { emit('activity', { building: args.t.building, taskId: args.t.id, dept: args.dept || 'pm', kind: 'end', summary: '中斷：' + String(e.message || e).slice(0, 60) }); await backupRun(args, '執行後（中斷）'); throw e; }
 }
-async function runClaudeInner({ t, dept, prompt, mode, resume, phaseName = '', label, model, browser }) {
+async function runClaudeInner({ t, dept, prompt, mode, resume, phaseName = '', label, model, browser, system }) {
   if (!query) throw new Error(engineError);
-  const b = buildings.find(x => x.id === t.building);
+  const b = bldOf(t.building);
   const rt = runtime.get(t.id) || { abort: new AbortController() };
   runtime.set(t.id, rt);
   const who = dept || 'pm';
@@ -365,7 +382,7 @@ async function runClaudeInner({ t, dept, prompt, mode, resume, phaseName = '', l
     allowedTools: planning ? READ_TOOLS.filter(x => x !== 'TodoWrite') : permOf(b) === 'manual' ? READ_TOOLS : AUTO_ALLOW,
     disallowedTools: planning ? [...WRITE_TOOLS, 'Bash', 'PowerShell', ...NEVER] : NEVER,
     canUseTool,
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: dept ? deptSystem(b, dept) : pmSystem(b, !!t.auto) },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: system || (dept ? deptSystem(b, dept) : pmSystem(b, !!t.auto)) },
   };
   if (browser?.length && !planning) { options.browserHosts = browser; options.allowedTools = [...options.allowedTools, 'mcp__browser']; }
   const useModel = model || CFG.model || null;
@@ -412,7 +429,7 @@ async function runClaudeInner({ t, dept, prompt, mode, resume, phaseName = '', l
   return { text: text || lastText, sessionId, cost, files: [...files] };
 }
 const clip = (s, n) => (s && s.length > n ? s.slice(0, n) + `\n…（還有 ${s.length - n} 字）` : s || '');
-function convFile(t, rn, who) { const b = buildings.find(x => x.id === t.building); return path.join(towerDir(b), 'tasks', t.id, `r${rn}-${who}-對話.jsonl`); }
+function convFile(t, rn, who) { const b = bldOf(t.building); return path.join(towerDir(b), 'tasks', t.id, `r${rn}-${who}-對話.jsonl`); }
 function conv(t, rn, who, entry) {
   entry.at = Date.now();
   const f = convFile(t, rn, who);
@@ -1326,14 +1343,181 @@ function cancel(t) {
   r.status = 'cancelled'; t.status = 'cancelled'; pushTask(t);
 }
 
+
+/* ---------- 新增大樓：基本四部門，或由 Claude Code 設計整個團隊 ---------- */
+const STYLES = ['board', 'research', 'design', 'dev', 'test'];
+const ICON_NAMES = ['code', 'terminal', 'globe', 'book', 'pen', 'wrench', 'folder', 'cup', 'check', 'server', 'inbox', 'rocket', 'eye', 'target'];
+const PALETTE = [['#cbe7ea', '#2f7f86'], ['#f6d2bd', '#b8643a'], ['#bfe3cf', '#2f8a5f'], ['#f3dc9a', '#a07818'], ['#e6d4f1', '#8a5aa8'], ['#d3e1f1', '#456f9e'], ['#f7c9dc', '#b04a78'], ['#d4e6c3', '#5b8a32'], ['#e3ddcf', '#77684a'], ['#f9d9ab', '#b5651d'], ['#c9e4f3', '#2c79a6'], ['#e6d6cf', '#8a5143']];
+const setupJobs = new Map(); // 大樓代號 -> 設計進度
+function newBuildingId(name) {
+  const base = (String(name).toLowerCase().match(/[a-z0-9]+/g) || []).join('-').slice(0, 24) || 'b' + crypto.randomBytes(2).toString('hex');
+  const root = /^[a-z]/.test(base) ? base : 'b-' + base;
+  const taken = x => buildings.some(b => b.id === x) || setupJobs.has(x) || draftBuildings.has(x);
+  let id = root, n = 2; while (taken(id)) id = root + '-' + n++;
+  return id;
+}
+function resolveProjectDir(input, id) {
+  const raw = String(input || '').trim().replace(/^["']+|["']+$/g, '');
+  const rel = (raw || path.join('workspaces', id)).replace(/\\/g, '/');
+  const dir = path.resolve(ROOT, rel);
+  if (dir === ROOT) throw new Error('專案資料夾不能是大樓資料夾本身');
+  const same = buildings.find(b => path.resolve(b.dir) === dir) || [...setupJobs.values()].find(j => j.status === 'designing' && j.dir === dir);
+  if (same) throw new Error(`這個資料夾已經是「${same.name}」大樓了`);
+  if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory()) throw new Error('這個路徑是檔案，不是資料夾');
+  fs.mkdirSync(dir, { recursive: true });
+  return { dir, projectDir: path.isAbsolute(rel) ? dir.replace(/\\/g, '/') : rel };
+}
+function addBuilding(entry) {
+  let raw = {}; try { raw = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch {}
+  raw.buildings = [...(raw.buildings || []).filter(x => x.id !== entry.id), entry];
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(raw, null, 2) + '\n');
+  CFG.buildings = raw.buildings;
+  const b = normBuilding(entry); buildings.push(b);
+  fs.mkdirSync(towerDir(b), { recursive: true });
+  console.log(`新增大樓「${b.name}」→ ${b.dir}`);
+  emit('buildings', { id: b.id, name: b.name });
+  return b;
+}
+// 寫進專案的檔案一律不覆蓋：已經有同名檔案就另存成 -2、-3
+function writeNew(dir, rel, text) {
+  const ext = path.extname(rel), stem = rel.slice(0, rel.length - ext.length);
+  let r = rel, n = 2; while (fs.existsSync(path.join(dir, r))) r = `${stem}-${n++}${ext}`;
+  fs.mkdirSync(path.dirname(path.join(dir, r)), { recursive: true });
+  fs.writeFileSync(path.join(dir, r), String(text).replace(/\r\n/g, '\n').trim() + '\n');
+  return r;
+}
+const INBOX_MD = '\n\n## 收件匣\n其他部門需要你配合時，在這裡加一列：要改什麼、怎麼驗收、不能動什麼。\n\n| 日期 | 來自 | 要改什麼 | 怎麼驗收 | 不能動什麼 |\n|---|---|---|---|---|\n';
+const withInbox = s => /##\s*收件匣/.test(s) ? s : s.trim() + INBOX_MD;
+const agentMd = (id, desc, prompt, hb) => `---\nname: ${id}\ndescription: ${String(desc || id).replace(/\s+/g, ' ').slice(0, 200)}\n---\n\n${String(prompt).trim()}\n\n工作前先讀你的手冊：\`${hb}\`。\n`;
+const APPROVALS_MD = `# 待核可清單
+
+各部門需要你決定的事寫在這裡。大樓會讀「待擁有者」段的表格，每一列變成「需要你處理」裡的一個項目；你在大樓回覆後，負責的部門會照你的話落地，再把那一列移到「已決定」。
+
+## 待擁有者
+
+| # | 加入 | 來自 | 類型 | 事項 | 你要做的事 | 期限 | 檔案 |
+|---|---|---|---|---|---|---|---|
+
+## 已決定
+
+| # | 決定日 | 事項 | 你的原話 | 落地到哪 |
+|---|---|---|---|---|
+`;
+function cleanDesign(j) {
+  if (!j || typeof j !== 'object') throw new Error('Claude Code 沒有回傳團隊設計');
+  const seen = new Set(['pm', 'company', 'chief']);
+  const depts = (Array.isArray(j.departments) ? j.departments : []).filter(d => d && String(d.prompt || '').trim()).slice(0, 10).map((d, i) => {
+    let id = String(d.id || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24);
+    if (!/^[a-z]/.test(id)) id = 'dept-' + (i + 1);
+    while (seen.has(id)) id += '-2'; seen.add(id);
+    const [wall, ink] = PALETTE[i % PALETTE.length];
+    return { id, name: String(d.name || id).trim().slice(0, 12), line: String(d.line || '').trim().slice(0, 8), members: Math.min(6, Math.max(1, Math.round(+d.members || 2))), style: STYLES.includes(d.style) ? d.style : 'research', icon: ICON_NAMES.includes(d.icon) ? d.icon : 'folder', wall, ink, description: String(d.description || '').trim(), prompt: String(d.prompt).trim(), handbook: String(d.handbook || '').trim() };
+  });
+  if (depts.length < 2) throw new Error('Claude Code 設計的部門少於 2 個，請把需求寫具體一點再試一次');
+  const pm = j.pm || {};
+  return { summary: String(j.summary || '').trim(), plan: String(j.plan || '').trim(), pm: { name: String(pm.name || '總管').trim().slice(0, 10), description: String(pm.description || '').trim(), prompt: String(pm.prompt || '').trim(), handbook: String(pm.handbook || '').trim() }, depts };
+}
+function writeTeam(job, dz) {
+  const dir = job.dir, pmName = dz.pm.name;
+  const hbPm = writeNew(dir, 'docs/team/00-chief.md', withInbox(dz.pm.handbook || `# 00 ${pmName}手冊\n\n## 負責範圍\n- 把擁有者的需求拆給各部門、安排先後順序、彙整報告。`));
+  const agPm = writeNew(dir, '.claude/agents/chief.md', agentMd('chief', dz.pm.description || `${job.name}的${pmName}（PM）`, dz.pm.prompt || `你是${job.name}的${pmName}。你把擁有者的需求拆給各部門、安排先後順序，最後彙整報告。你自己不寫程式、不改檔案。`, hbPm));
+  const departments = dz.depts.map((d, i) => {
+    const no = String(i + 1).padStart(2, '0');
+    const hb = writeNew(dir, `docs/team/${no}-${d.id}.md`, withInbox(d.handbook || `# ${no} ${d.name}手冊\n\n## 負責範圍\n- ${d.description || d.name}`));
+    const ag = writeNew(dir, `.claude/agents/${d.id}.md`, agentMd(d.id, d.description || d.name, d.prompt, hb));
+    return { id: d.id, name: d.name, ...(d.line ? { line: d.line } : {}), members: d.members, style: d.style, icon: d.icon, wall: d.wall, ink: d.ink, agentFile: ag, handbook: hb };
+  });
+  if (!['approvals.md', 'docs/approvals.md'].some(f => fs.existsSync(path.join(dir, f)))) writeNew(dir, 'approvals.md', APPROVALS_MD);
+  let plan = ['docs/company-plan.md', 'docs/plan.md'].find(f => fs.existsSync(path.join(dir, f))) || '';
+  if (!plan && dz.plan) plan = writeNew(dir, 'docs/company-plan.md', dz.plan);
+  return { id: job.id, name: job.name, projectDir: job.projectDir, ...(plan ? { plan } : {}), pm: { name: pmName, agentFile: agPm, handbook: hbPm }, departments };
+}
+const DESIGN_SYSTEM = `你是「AI 團隊大樓」的組織設計顧問。你替一個專案設計 AI 團隊：一位 PM（總管）和幾個部門，並寫出每個角色的設定與手冊。你只閱讀專案、不修改任何檔案，最後只回傳 JSON。一律使用繁體中文。`;
+const Q3 = '"'.repeat(3);
+const designPrompt = job => `【設計大樓】今天是 ${today()}。擁有者要在「AI 團隊大樓」新增一棟大樓「${job.name}」，專案資料夾就是目前的工作目錄（可能是空的）。
+
+擁有者的需求：
+${Q3}
+${job.brief}
+${Q3}
+
+請先看一下專案資料夾現有的內容（README、文件、程式結構、已經有的 .claude/agents），再替這個專案設計 AI 團隊：一位 PM（總管）和 3～8 個部門。這一輪只能閱讀，不要修改任何檔案；檔案會由大樓照你的 JSON 建立。
+
+只回傳一個 JSON（放在 \`\`\`json 區塊），格式：
+{
+  "summary": "你怎麼設計這個團隊、為什麼（2～3 句）",
+  "pm": { "name": "PM 的稱呼，例如總管、總編輯", "description": "一句話職責", "prompt": "角色設定", "handbook": "PM 手冊（Markdown）" },
+  "departments": [
+    { "id": "英文代號", "name": "中文部門名，例如設計部", "line": "所屬產線，例如製作線（可留空）", "members": 2, "style": "dev", "icon": "code", "description": "一句話職責", "prompt": "角色設定", "handbook": "部門手冊（Markdown）" }
+  ],
+  "plan": "公司計畫書（Markdown）；專案裡已經有計畫書就給空字串"
+}
+
+規則：
+- id 只能用小寫英文、數字、連字號，2～24 字，不能用 pm、company、chief。
+- members 是部門人數，1～6，依工作量決定。
+- style 是辦公室擺設，只能是 board（會議桌）、research（書架）、design（繪圖桌）、dev（電腦桌）、test（測試台）其中之一，選最像那個部門工作場景的。
+- icon 只能是：${ICON_NAMES.join('、')}。
+- prompt：用第二人稱寫這個角色是誰、負責什麼、不做什麼，5～10 行。
+- handbook：至少包含「## 負責範圍」「## 要擁有者核可的事」「## 交付物放哪」三段，具體到這個專案的資料夾與檔案。手冊標題用「# 編號 部門名手冊」，PM 是 00，部門依陣列順序從 01 開始。
+- plan：如果要寫，包含現況、年度目標、時程、核可等級（自動、核可、人）。
+- 部門不要重疊；寧可少而清楚，不要為了湊數加部門。`;
+async function designBuilding(job) {
+  const t = { id: 'setup-' + job.id, building: job.id, title: '設計大樓：' + job.name, rounds: [{ n: 1, depts: {} }], cost: 0 };
+  job.taskId = t.id;
+  draftBuildings.set(job.id, { id: job.id, name: job.name, dir: job.dir });
+  specialTitles.set(t.id, '設計大樓');
+  runtime.set(t.id, { abort: new AbortController() });
+  emit('setup', job);
+  try {
+    const out = await runClaude({ t, dept: null, prompt: designPrompt(job), mode: 'plan', phaseName: '設計大樓', label: ['開始設計團隊', '團隊設計完成'], model: MODELS.plan, system: DESIGN_SYSTEM });
+    const dz = cleanDesign(extractJson(out.text));
+    const entry = writeTeam(job, dz);
+    Object.assign(job, { status: 'done', summary: dz.summary, cost: t.cost, depts: entry.departments.map(d => d.name) });
+    draftBuildings.delete(job.id);
+    addBuilding(entry);
+  } catch (e) { job.status = 'error'; job.error = String(e.message || e).slice(0, 400); }
+  finally { job.endedAt = Date.now(); draftBuildings.delete(job.id); runtime.delete(t.id); emit('setup', job); }
+}
+// 在背景跑一次 claude 指令（檢查登入狀態用）
+function runCli(args, env, ms = 20000) {
+  return new Promise(resolve => {
+    let out = '', err = '';
+    const pr = spawn(CLAUDE_PATH, args, { env, cwd: ROOT, windowsHide: true });
+    const tm = setTimeout(() => { try { pr.kill(); } catch {} }, ms);
+    pr.stdout.on('data', d => out += d); pr.stderr.on('data', d => err += d);
+    pr.on('close', code => { clearTimeout(tm); resolve({ code, out, err }); });
+    pr.on('error', e => { clearTimeout(tm); resolve({ code: -1, out: '', err: e.message }); });
+    pr.stdin.end();
+  });
+}
+async function checkAuth(mode, key) {
+  if (mode === 'subscription') {
+    if (!CLAUDE_PATH) return { ok: false, text: '找不到 Claude Code。請先安裝 Claude 桌面版或 Claude Code，再重新啟動大樓。' };
+    const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
+    const r = await runCli(['auth', 'status'], env);
+    let j = null; try { j = JSON.parse(r.out); } catch {}
+    if (j?.loggedIn) return { ok: true, text: `已登入${j.email ? '：' + j.email : ''}${j.subscriptionType ? `（${j.subscriptionType} 方案）` : ''}` };
+    if (j) return { ok: false, text: '還沒登入。請在大樓資料夾開終端機，執行 npm run login。' };
+    return { ok: false, text: '檢查失敗：' + (r.err || r.out || '沒有回應').trim().slice(0, 200) };
+  }
+  if (!key) return { ok: false, text: '還沒有 API 金鑰' };
+  if (!/^sk-ant-[\w-]{20,}$/.test(key)) return { ok: false, text: '金鑰格式不對，應該是 sk-ant- 開頭的一長串文字' };
+  try {
+    const r = await fetch((process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '') + '/v1/models?limit=1', { headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' }, signal: AbortSignal.timeout(15000) });
+    if (r.ok) return { ok: true, text: '金鑰有效' };
+    return { ok: false, text: r.status === 401 ? '金鑰無效，請確認有沒有複製完整' : r.status === 403 ? '這把金鑰沒有權限' : `驗證失敗（HTTP ${r.status}）` };
+  } catch (e) { return { ok: false, text: '連不到 Anthropic API：' + String(e.message || e).slice(0, 120) }; }
+}
+
 /* ---------- HTTP ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml' };
 function send(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); }
 async function body(req) { let s = ''; for await (const c of req) { s += c; if (s.length > 2e6) throw new Error('內容太大'); } return s ? JSON.parse(s) : {}; }
 function state(ext) {
-  if (ext) { const st = state(false), ok = SHARE_BUILDINGS(); return { ...st, share: true, buildings: st.buildings.filter(b => ok.includes(b.id)).map(b => ({ ...b, projectDir: '' })), tasks: st.tasks.filter(t => ok.includes(t.building)), approvals: [], claudePath: '', apiKeyHint: '' }; }
+  if (ext) { const st = state(false), ok = SHARE_BUILDINGS(); return { ...st, share: true, buildings: st.buildings.filter(b => ok.includes(b.id)).map(b => ({ ...b, projectDir: '' })), tasks: st.tasks.filter(t => ok.includes(t.building)), approvals: [], claudePath: '', apiKeyHint: '', setups: [] }; }
   return {
-    live: true, ready: !!query, engineError, engine: ENGINE, claudePath: CLAUDE_PATH || '', ...authInfo(),
+    live: true, ready: !!query, engineError, engine: ENGINE, claudePath: CLAUDE_PATH || '', claudeFound: !!CLAUDE_PATH, ...authInfo(), setups: [...setupJobs.values()],
     depts: Object.fromEntries(Object.entries(DEPTS).map(([k, v]) => [k, v.name])),
     buildings: buildings.map(b => ({ id: b.id, name: b.name, projectDir: b.dir, counts: b.counts, departments: b.departments || null, pm: b.pm ? { name: b.pm.name } : null })),
     tasks: [...tasks.values()],
@@ -1374,6 +1558,29 @@ const server = http.createServer(async (req, res) => {
         if (authMode() === 'api' && !apiKey()) LOCAL.auth = 'subscription'; // 金鑰刪掉了就回到訂閱登入
         saveLocal(); emit('auth', authInfo()); console.log('登入方式：' + AUTH_LABEL[authMode()]);
         return send(res, 200, authInfo());
+      }
+      if (p === '/api/auth/check' && req.method === 'POST') {
+        const bd = await body(req), mode = bd.mode === 'api' ? 'api' : 'subscription', given = typeof bd.apiKey === 'string' ? bd.apiKey.trim() : '';
+        const r = await checkAuth(mode, given || apiKey());
+        if (r.ok && bd.use) { if (given) LOCAL.apiKey = given; LOCAL.auth = mode; saveLocal(); emit('auth', authInfo()); console.log('登入方式：' + AUTH_LABEL[mode]); }
+        return send(res, 200, { ...r, ...authInfo() });
+      }
+      if (p === '/api/buildings' && req.method === 'POST') {
+        const bd = await body(req), name = String(bd.name || '').trim().slice(0, 30), ai = bd.mode !== 'basic';
+        if (!name) return send(res, 400, { error: '請輸入大樓名稱' });
+        if (ai && !query) return send(res, 400, { error: engineError });
+        if (ai && !String(bd.brief || '').trim()) return send(res, 400, { error: '請寫下這個團隊要做什麼，Claude Code 才能設計部門' });
+        const id = newBuildingId(name); let pd;
+        try { pd = resolveProjectDir(bd.projectDir, id); } catch (e) { return send(res, 400, { error: e.message }); }
+        if (!ai) { const b = addBuilding({ id, name, projectDir: pd.projectDir }); return send(res, 200, { ok: true, id: b.id, name: b.name }); }
+        const job = { id, name, dir: pd.dir, projectDir: pd.projectDir, brief: String(bd.brief).trim().slice(0, 4000), status: 'designing', startedAt: Date.now() };
+        setupJobs.set(id, job); designBuilding(job);
+        return send(res, 200, job);
+      }
+      const sm = p.match(/^\/api\/buildings\/setup\/([\w-]+)\/cancel$/);
+      if (sm && req.method === 'POST') {
+        const rt = runtime.get('setup-' + sm[1]); if (rt) rt.abort.abort();
+        return send(res, 200, { ok: true });
       }
       if (p === '/api/browser' && req.method === 'GET') { await checkBrowser(); return send(res, 200, { up: browserIsUp, exe: !!BROWSER.exe }); }
       if (p === '/api/browser/open' && req.method === 'POST') { const bd = await body(req); const hosts = [...new Set(Object.values(AUTO_BROWSER).flat())], hostOk = s => { try { const h = new URL(s).hostname; return new URL(s).protocol === 'https:' && hosts.some(a => h === a || h.endsWith('.' + a)); } catch { return false; } }; const u = hostOk(bd.url) ? bd.url : hosts[0] ? 'https://' + hosts[0] + '/' : 'about:blank'; const ok = await ensureBrowser(BROWSER, u); browserIsUp = ok; return send(res, ok ? 200 : 500, ok ? { up: true } : { error: '大樓瀏覽器開不起來（找不到 Brave／Chrome，或連接埠被占用）' }); }

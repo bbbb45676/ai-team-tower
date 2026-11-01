@@ -435,9 +435,30 @@ textarea.plan { font-family: var(--f-mono); font-size: 12.5px; min-height: 220px
 .pmenu .pm-key .pm-row .btn { padding: 6px 10px; white-space: nowrap; }
 .pmenu .pm-key em { font-style: normal; font-size: 11.5px; color: var(--muted); }
 .pmenu .pm-key a { color: #c84a3a; }
+.nbform { display: grid; }
+.nbjob { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
+.nbjob .k { font-weight: 700; font-size: 13.5px; }
+.nbjob.designing { border-color: color-mix(in srgb, var(--amber) 60%, var(--line)); }
+.nbjob.error .k { color: #b4453a; }
+.nblog { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); margin: 6px 0; display: grid; gap: 2px; }
+.guide { position: fixed; inset: 0; z-index: 80; background: rgba(20, 18, 16, .45); display: grid; place-items: center; padding: 16px; }
+.guide[hidden] { display: none; }
+.guide .gd { background: var(--surface); color: var(--ink); border-radius: 18px; max-width: 780px; width: 100%; max-height: calc(100vh - 32px); overflow: auto; padding: 22px; box-sizing: border-box; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); }
+.guide h2 { margin: 2px 0 0; }
+.guide .gd-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-top: 14px; }
+.guide .gd-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 10px; align-content: start; }
+.guide .gd-card.on { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent); }
+.guide .gd-card h3 { margin: 0; font-size: 15px; }
+.guide .gd-card .tag { font-size: 11.5px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+.guide ol { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.75; }
+.guide code { font-family: var(--f-mono); font-size: 12px; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+.guide .gd-st { font-size: 12.5px; padding: 7px 10px; border-radius: 8px; background: var(--surface-2); }
+.guide .gd-st.ok { color: #2f7a4f; }
+.guide .gd-st.bad { color: #b4453a; }
+.guide .gd-f { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
 .mlv { font-size: 11.5px; color: var(--muted); background: var(--surface-2); border-radius: 999px; padding: 1px 8px; margin-left: auto; white-space: nowrap; }
 .dhead .mlv + .pill { margin-left: 6px; }
-.share #dReq, .share #dPerm, .share #dAuth, .share #inbox, .share .newreq, .share .gchat, .share [data-act="ok"], .share [data-act="no"], .share [data-act="ap-toggle"], .share [data-act="ap-run"], .share [data-act="ap-rtoggle"], .share [data-act="ap-copy"], .share [data-act="ap-hdone"], .share [data-act="tb-open"], .share .apcaps, .share #ap-cap,
+.share #dReq, .share #dPerm, .share #dAuth, .share [data-b="add"], .share #inbox, .share .newreq, .share .gchat, .share [data-act="ok"], .share [data-act="no"], .share [data-act="ap-toggle"], .share [data-act="ap-run"], .share [data-act="ap-rtoggle"], .share [data-act="ap-copy"], .share [data-act="ap-hdone"], .share [data-act="tb-open"], .share .apcaps, .share #ap-cap,
 .share [data-act="plan-ok"], .share [data-act="plan-revise"], .share [data-act="plan-ask"], .share [data-act="approve-all"], .share [data-act="cancel"], .share [data-act="gapprove"], .share [data-act="gdiscard"], .share [data-act="gedit"], .share [data-act="gadd"], .share [data-act="gimport"], .share [data-act="gtask"], .share [data-act="recruit"], .share [data-gst], .share textarea { display: none !important; }
 .sharebadge { position: fixed; top: 14px; right: 16px; z-index: 50; background: var(--ink); color: var(--surface); font-size: 12.5px; font-weight: 700; padding: 6px 12px; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.15); }
 .costnote { font-size: 11.5px; color: var(--muted); }
@@ -2019,7 +2040,7 @@ function openAuthMenu(keep) {
   const keyNote = AUTH.apiKeySet ? `目前的金鑰：${esc(AUTH.apiKeyHint)}（${src}）` : '還沒有設定金鑰';
   mnu.innerHTML = `<div class="pm-h">Claude 的登入方式</div>` + AUTHS.map(([k, n, d], i) => `<button data-auth="${k}" class="${k === AUTH.auth ? 'on' : ''}"><span><b>${n}</b><em>${d}</em></span><i>${k === AUTH.auth ? svg('check', 2.4) : i + 1}</i></button>`).join('')
     + `<div class="pm-key"><label for="authKey">API 金鑰</label><div class="pm-row"><input id="authKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"><button class="btn" data-authsave>儲存並使用</button></div><em>${keyNote}${AUTH.apiKeySource === 'local' ? ' · <a href="#" data-authclear>刪除</a>' : ''}</em></div>`
-    + `<div class="pm-f">${AUTH.engine === 'mock' ? '目前是模擬模式，不會真的呼叫 Claude。' : ''}金鑰只存在這台電腦，不會進版本控制。訂閱登入第一次使用前，請先執行 npm run login。</div>`;
+    + `<div class="pm-f">${AUTH.engine === 'mock' ? '目前是模擬模式，不會真的呼叫 Claude。' : ''}金鑰只存在這台電腦，不會進版本控制。第一次設定請看 <a href="#" data-authguide>登入指引</a>。</div>`;
   mnu.hidden = false;
 }
 async function postAuth(body, msg) {
@@ -2033,12 +2054,129 @@ function saveAuthKey() {
 document.getElementById('dAuth').onclick = e => { e.stopPropagation(); openAuthMenu(); };
 document.getElementById('authMenu').onclick = e => {
   e.stopPropagation();
+  if (e.target.closest('[data-authguide]')) { e.preventDefault(); document.getElementById('authMenu').hidden = true; openGuide(); return; }
   if (e.target.closest('[data-authclear]')) { e.preventDefault(); if (confirm('刪除存在這台電腦的 API 金鑰？')) postAuth({ clearKey: true }, '已刪除金鑰'); return; }
   if (e.target.closest('[data-authsave]')) return saveAuthKey();
   const k = e.target.closest('[data-auth]')?.dataset.auth; if (!k || k === AUTH.auth) return;
   if (k === 'api' && !AUTH.apiKeySet) { notify('請先在下面貼上 API 金鑰，再按「儲存並使用」'); document.getElementById('authKey')?.focus(); return; }
   postAuth({ mode: k }, '登入方式：' + AUTHS.find(x => x[0] === k)[1]);
 };
+
+/* ---------- 新增大樓 ---------- */
+const NBF = { name: '', dir: '', brief: '' };
+const SETUPS = new Map(), NBLOG = new Map();
+const nbLogLines = id => (NBLOG.get(id) || []).slice(-8).map(x => `<div>${esc(x)}</div>`).join('') || '<div>準備中…</div>';
+function newbHTML() {
+  const jobs = [...SETUPS.values()].sort((a, z) => z.startedAt - a.startedAt);
+  let h = `<section><div class="eyebrow">新增大樓</div><h2>蓋一棟新大樓</h2><p class="sub">每棟大樓對應一個專案資料夾。寫下這個團隊要做什麼，Claude Code 會先讀專案，再設計 PM 和各部門；大樓會把每個角色的設定和手冊寫進專案的 <code>.claude/agents</code> 和 <code>docs/team</code>。</p></section>`;
+  h += `<section class="nbform">
+    <label class="lbl" for="nb-name">大樓名稱</label><input class="ginput" id="nb-name" maxlength="30" value="${esc(NBF.name)}" placeholder="例如：咖啡店官網">
+    <label class="lbl" for="nb-dir">專案資料夾（選填）</label><input class="ginput" id="nb-dir" value="${esc(NBF.dir)}" placeholder="例如 C:\\projects\\coffee；不填就放在大樓的 workspaces 資料夾">
+    <label class="lbl" for="nb-brief">這個團隊要做什麼？</label><textarea id="nb-brief" rows="6" placeholder="例如：經營一間咖啡店的官網和社群。要有人做市場調查、設計菜單頁、寫網站程式，每週檢查網站有沒有壞掉。">${esc(NBF.brief)}</textarea>
+    <div class="row2" style="margin-top:12px"><button class="btn pri" data-act="nb-ai">${svg('rocket', 2)}讓 Claude Code 設計團隊</button><button class="btn" data-act="nb-basic">先用基本四個部門</button></div>
+    <p class="sub">設計時 Claude Code 只會讀專案、不會修改檔案，大約一到三分鐘，用量算在目前的登入方式（${esc((AUTHS.find(x => x[0] === AUTH.auth) || AUTHS[0])[1])}）。專案裡已經有的檔案不會被覆蓋。「基本四個部門」是研究、設計、開發、測試，不呼叫 Claude。</p></section>`;
+  if (jobs.length) h += `<section><h3>設計進度</h3>` + jobs.map(j => `<div class="nbjob ${j.status}"><div class="k">${esc(j.name)} · ${{ designing: '設計中…', done: '完成', error: '沒有成功' }[j.status] || ''}</div>`
+    + (j.status === 'designing' ? `<div class="nblog" data-nblog="${esc(j.id)}">${nbLogLines(j.id)}</div><div class="row2"><button class="btn" data-act="nb-cancel" data-sid="${esc(j.id)}">取消</button></div>`
+      : j.status === 'done' ? `<p class="sub">${esc(j.summary || '')}${j.depts?.length ? '<br>部門：' + j.depts.map(esc).join('、') : ''}</p>`
+      : `<p class="sub">${esc(j.error || '')}</p><p class="sub">表單內容還在，可以修改後再按一次。</p>`) + '</div>').join('') + '</section>';
+  return h;
+}
+pbody.addEventListener('input', e => { const k = { 'nb-name': 'name', 'nb-dir': 'dir', 'nb-brief': 'brief' }[e.target.id]; if (k) NBF[k] = e.target.value; });
+async function nbSubmit(mode) {
+  if (!NBF.name.trim()) { notify('請先輸入大樓名稱'); return; }
+  if (mode === 'ai' && !NBF.brief.trim()) { notify('請寫下這個團隊要做什麼'); return; }
+  try {
+    const j = await api('/api/buildings', { name: NBF.name, projectDir: NBF.dir, brief: NBF.brief, mode });
+    if (mode === 'ai') { SETUPS.set(j.id, j); NBLOG.delete(j.id); notify(`開始設計「${j.name}」，完成後會自動打開新大樓`, 'ok'); lastKey = ''; renderPanel(true); }
+  } catch (er) { notify(er.message); }
+}
+function onSetupEvent(j) {
+  SETUPS.set(j.id, j);
+  if (j.status === 'error') notify(`「${j.name}」設計沒有成功：${String(j.error || '').slice(0, 80)}`);
+  if (sel.kind === 'newb') renderPanel(false);
+}
+function onSetupActivity(ev) {
+  const j = SETUPS.get(ev.building); if (!j || j.status !== 'designing' || !ev.summary) return;
+  const arr = NBLOG.get(j.id) || []; arr.push(ev.summary); if (arr.length > 40) arr.shift(); NBLOG.set(j.id, arr);
+  const el = pbody.querySelector(`[data-nblog="${CSS.escape(j.id)}"]`); if (el) el.innerHTML = nbLogLines(j.id);
+}
+function onBuildingAdded(j) {
+  try { sessionStorage.setItem('tower-open', j.id); } catch {}
+  notify(`「${j.name}」大樓蓋好了，正在重新整理…`, 'ok');
+  setTimeout(() => location.reload(), 1500);
+}
+
+/* ---------- 第一次啟動：登入方式指引 ---------- */
+const GDS = { subscription: null, api: null }; let gdPick = null, gdBusy = '';
+function guideHTML() {
+  const pick = gdPick || AUTH.auth || 'subscription', st = k => GDS[k] ? `<div class="gd-st ${GDS[k].ok ? 'ok' : 'bad'}">${GDS[k].ok ? '✓ ' : ''}${esc(GDS[k].text)}</div>` : '';
+  const found = AUTH.claudeFound;
+  return `<div class="gd" role="dialog" aria-modal="true" aria-labelledby="gd-title">
+    <div class="eyebrow">開始之前</div><h2 id="gd-title">選擇 Claude 的登入方式</h2>
+    <p class="sub">大樓會在背景使用你電腦上的 Claude Code 替各部門工作。請選一種登入方式，之後也可以在工具列的「登入」隨時切換。${AUTH.engine === 'mock' ? '<br>目前是模擬模式，不會真的呼叫 Claude；這裡的設定會在正式啟動（npm start）時使用。' : ''}</p>
+    <div class="gd-cards">
+      <div class="gd-card ${pick === 'subscription' ? 'on' : ''}" data-gdpick="subscription"><h3>訂閱登入<span class="tag">有 Claude Pro、Max 等方案的人</span></h3>
+        <ol>
+          <li>${found ? '已找到這台電腦上的 Claude Code ✓' : '安裝 <b>Claude 桌面版</b>或 <b>Claude Code</b>，裝好後重新啟動大樓（目前找不到 Claude Code）。'}</li>
+          <li>在大樓資料夾開一個終端機，執行 <code>npm run login</code>，瀏覽器會打開登入頁，用你的 Claude 帳號登入。</li>
+          <li>回到這裡按「檢查登入狀態」，確認已登入後按「使用訂閱登入」。</li>
+        </ol>
+        ${st('subscription')}
+        <div class="row2"><button class="btn" data-gd="check-sub"${gdBusy ? ' disabled' : ''}>${gdBusy === 'sub' ? '檢查中…' : '檢查登入狀態'}</button><button class="btn pri" data-gd="use-sub"${gdBusy ? ' disabled' : ''}>使用訂閱登入</button></div>
+        <p class="sub" style="margin:0">用量算在訂閱方案的額度裡，不會另外收費。</p>
+      </div>
+      <div class="gd-card ${pick === 'api' ? 'on' : ''}" data-gdpick="api"><h3>API 金鑰<span class="tag">依實際用量計費</span></h3>
+        <ol>
+          <li>到 Anthropic Console（console.anthropic.com）登入，在「API Keys」建立一把金鑰。</li>
+          <li>把金鑰（<code>sk-ant-</code> 開頭）貼在下面，按「驗證並使用」。</li>
+        </ol>
+        <input class="ginput" id="gd-key" type="password" autocomplete="off" spellcheck="false" placeholder="${AUTH.apiKeySet ? '已設定 ' + esc(AUTH.apiKeyHint) + '，要換才需要重新貼上' : 'sk-ant-…'}">
+        ${st('api')}
+        <div class="row2"><button class="btn pri" data-gd="use-api"${gdBusy ? ' disabled' : ''}>${gdBusy === 'api' ? '驗證中…' : '驗證並使用'}</button></div>
+        <p class="sub" style="margin:0">金鑰只存在這台電腦的 <code>.tower-local.json</code>，不會進版本控制。也可以改用環境變數 <code>ANTHROPIC_API_KEY</code>。</p>
+      </div>
+    </div>
+    <div class="gd-f"><span class="sub" style="margin:0">目前：${esc((AUTHS.find(x => x[0] === AUTH.auth) || AUTHS[0])[1])}${AUTH.chosen ? '' : '（還沒選過）'}</span><button class="btn" data-gd="later">稍後再說</button></div>
+  </div>`;
+}
+function renderGuide() {
+  const el = document.getElementById('authGuide'); if (!el || el.hidden) return;
+  const key = el.querySelector('#gd-key')?.value || '';
+  el.innerHTML = guideHTML();
+  const k = el.querySelector('#gd-key'); if (k) k.value = key;
+}
+function openGuide() {
+  let el = document.getElementById('authGuide');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'authGuide'; el.className = 'guide'; document.body.appendChild(el);
+    el.addEventListener('click', e => { e.stopPropagation(); if (e.target === el) return closeGuide(); guideClick(e); });
+    el.addEventListener('keydown', e => { if (e.key === 'Escape') closeGuide(); if (e.key === 'Enter' && e.target.id === 'gd-key') guideAct('use-api'); });
+  }
+  gdPick = null; el.hidden = false; renderGuide();
+}
+function closeGuide() { const el = document.getElementById('authGuide'); if (el) el.hidden = true; }
+function guideClick(e) {
+  const a = e.target.closest('[data-gd]')?.dataset.gd;
+  if (a) return guideAct(a);
+  const p = e.target.closest('[data-gdpick]')?.dataset.gdpick;
+  if (p && p !== gdPick && !e.target.closest('input,button')) { gdPick = p; renderGuide(); }
+}
+async function guideAct(a) {
+  if (a === 'later') return closeGuide();
+  if (gdBusy) return;
+  const key = document.getElementById('gd-key')?.value.trim() || '';
+  if (a === 'use-api' && !key && !AUTH.apiKeySet) { GDS.api = { ok: false, text: '請先貼上 API 金鑰' }; gdPick = 'api'; return renderGuide(); }
+  gdBusy = a === 'use-api' ? 'api' : 'sub'; gdPick = a === 'use-api' ? 'api' : 'subscription'; renderGuide();
+  try {
+    const mode = a === 'use-api' ? 'api' : 'subscription';
+    const r = await api('/api/auth/check', { mode, apiKey: key, use: a !== 'check-sub' });
+    GDS[mode] = { ok: r.ok, text: r.text };
+    AUTH = { ...AUTH, auth: r.auth, apiKeySet: r.apiKeySet, apiKeySource: r.apiKeySource, apiKeyHint: r.apiKeyHint, chosen: r.chosen }; syncAuth();
+    if (r.ok && a !== 'check-sub') { gdBusy = ''; closeGuide(); notify('登入方式：' + AUTHS.find(x => x[0] === mode)[1], 'ok'); return; }
+  } catch (er) { notify(er.message); }
+  gdBusy = ''; renderGuide();
+}
+
 document.getElementById('authMenu').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'authKey') { e.preventDefault(); saveAuthKey(); } });
 document.getElementById('dAuto').onclick = () => { if (sel.kind === 'auto') return closeDrawer(); select({ kind: 'auto' }); loadAuto(); };
 document.getElementById('dGoals').onclick = () => { if (sel.kind === 'goals') return closeDrawer(); select({ kind: 'goals' }); loadGoals(); };
@@ -2222,11 +2360,12 @@ function renderSwitch() {
   document.getElementById('odot').hidden = !pn.some((n, i) => i !== curI && n > 0);
   bdrop.innerHTML = buildings.map((b, i) => {
     return `<button class="${i === curI ? 'on' : ''}" data-b="${i}">${pn[i] ? `<i class="dot" aria-label="有待處理"></i>` : ''}${esc(b.name)}<span class="n">${pn[i] ? `<b class="pend">${pn[i]} 件待處理</b> · ` : ''}${b.agents.length} 人</span></button>`;
-  }).join('') + (LIVE ? `<div class="meta">在 tower.config.json 新增大樓</div>` : `<button data-b="new">${svg('plus', 2)}新大樓</button>`);
+  }).join('') + (LIVE ? `<button data-b="add">${svg('plus', 2)}新增大樓</button>` : `<button data-b="new">${svg('plus', 2)}新大樓</button>`);
 }
 document.getElementById('switch').addEventListener('click', e => {
   const t = e.target.closest('[data-b]'); if (!t) return;
   bdrop.hidden = true; bbtn.setAttribute('aria-expanded', 'false');
+  if (t.dataset.b === 'add') { select({ kind: 'newb' }); return; }
   if (t.dataset.b === 'new') { buildings.push(makeBuilding('新專案 ' + (buildings.length - 2), { research: 1, design: 1, dev: 1, test: 1 })); switchTo(buildings.length - 1); }
   else switchTo(+t.dataset.b);
 });
@@ -2264,6 +2403,11 @@ function renderPanel(force) {
     if (!force && key === lastKey) return;
     if (!force && gEdit && pbody.querySelector('.gform')) return;
     lastKey = key; const sc = pbody.scrollTop, gs = pbody.querySelector('.gscroll')?.scrollLeft; pbody.innerHTML = goalsHTML(); pbody.scrollTop = sc; const ng = pbody.querySelector('.gscroll'); if (ng && gs != null) ng.scrollLeft = gs; else if (ng) { const td = ng.querySelector('.gtoday'); if (td) ng.scrollLeft = Math.max(0, td.offsetLeft - 220); } return;
+  }
+  if (LIVE && sel.kind === 'newb') {
+    const key = 'newb:' + [...SETUPS.values()].map(j => j.id + j.status).join(',');
+    if (!force && key === lastKey) return;
+    lastKey = key; const sc = pbody.scrollTop; pbody.innerHTML = newbHTML(); pbody.scrollTop = sc; return;
   }
   if (LIVE && sel.kind === 'archive') {
     const key = 'arch:' + (archData ? archData.items.length + ':' + archData.tasks.length : 'x') + archFilter + archQ + archTime + archDate + archDept;
@@ -2390,6 +2534,9 @@ pbody.addEventListener('click', e => {
     case 'inbox': openInbox(); break;
     case 'ggo': { const bi = +t.dataset.bi; if (bi !== curI) switchTo(bi); gTab = 'goals'; select({ kind: 'goals' }); loadGoals(); break; }
     case 'archive': select({ kind: 'archive' }); loadArchive(); break;
+    case 'nb-ai': nbSubmit('ai'); break;
+    case 'nb-basic': nbSubmit('basic'); break;
+    case 'nb-cancel': api(`/api/buildings/setup/${t.dataset.sid}/cancel`).catch(er => notify(er.message)); break;
     case 'goals': select({ kind: 'goals' }); loadGoals(); break;
     case 'auto': select({ kind: 'auto' }); loadAuto(); break;
     case 'ap-toggle': apPost({ enabled: !AP.get(cur().sid)?.enabled }); break;
@@ -2818,6 +2965,9 @@ function startLive(st) {
   st.approvals.forEach(applyApproval);
   if (!st.ready) notify(st.engineError);
   const es = new EventSource('/events');
+  es.addEventListener('setup', e => onSetupEvent(JSON.parse(e.data)));
+  es.addEventListener('buildings', e => onBuildingAdded(JSON.parse(e.data)));
+  es.addEventListener('activity', e => onSetupActivity(JSON.parse(e.data)));
   es.addEventListener('auth', e => { AUTH = { ...AUTH, ...JSON.parse(e.data) }; syncAuth(); });
   es.addEventListener('state', e => { const j = JSON.parse(e.data); j.tasks.forEach(t => applyTask(t, true)); setConn('on'); lastKey = ''; });
   es.addEventListener('task', e => applyTask(JSON.parse(e.data)));
@@ -3492,7 +3642,9 @@ updateShadowCam(cur());
 placeClouds(cur()); applyTheme(); sizeStage(); fit(true); applyCam(); syncControls(); initHint();
 renderSwitch(); renderLegend(); renderPanel(true);
 if (LIVE && liveState.share) { document.body.classList.add('share'); const sb = document.createElement('div'); sb.className = 'sharebadge'; sb.textContent = '展示模式 · 只能看'; document.body.appendChild(sb); }
-if (LIVE) { startLive(liveState); document.getElementById('dReq').hidden = false; document.getElementById('dArchive').hidden = false; document.getElementById('dGoals').hidden = false; document.getElementById('dAuto').hidden = false; document.getElementById('dPerm').hidden = false; syncPerm(); AUTH = { auth: liveState.auth || 'subscription', apiKeySet: !!liveState.apiKeySet, apiKeySource: liveState.apiKeySource || '', apiKeyHint: liveState.apiKeyHint || '', engine: liveState.engine }; document.getElementById('dAuth').hidden = false; syncAuth(); document.getElementById('dTasks').textContent = '任務'; } else setConn('off');
+if (LIVE) { startLive(liveState); document.getElementById('dReq').hidden = false; document.getElementById('dArchive').hidden = false; document.getElementById('dGoals').hidden = false; document.getElementById('dAuto').hidden = false; document.getElementById('dPerm').hidden = false; syncPerm(); AUTH = { auth: liveState.auth || 'subscription', apiKeySet: !!liveState.apiKeySet, apiKeySource: liveState.apiKeySource || '', apiKeyHint: liveState.apiKeyHint || '', engine: liveState.engine, chosen: !!liveState.chosen, claudeFound: !!liveState.claudeFound }; document.getElementById('dAuth').hidden = false; syncAuth(); for (const j of liveState.setups || []) SETUPS.set(j.id, j); document.getElementById('dTasks').textContent = '任務'; } else setConn('off');
+try { const want = sessionStorage.getItem('tower-open'); if (want) { sessionStorage.removeItem('tower-open'); const i = buildings.findIndex(x => x.sid === want); if (i >= 0 && i !== curI) switchTo(i); } } catch {}
+if (LIVE && !liveState.share && liveState.engine !== 'mock' && !liveState.chosen) openGuide();
 setInterval(() => renderPanel(false), 400);
 setInterval(() => { renderSwitch(); updateInbox(); syncPerm(); }, 700);
 const ld = document.getElementById('loading'); ld.classList.add('hidden'); setTimeout(() => ld.remove(), 600);

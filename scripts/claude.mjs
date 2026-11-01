@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 function findClaude() {
   if (process.env.CLAUDE_CODE_PATH && fs.existsSync(process.env.CLAUDE_CODE_PATH)) return process.env.CLAUDE_CODE_PATH;
@@ -26,4 +27,4 @@ if (!exe) { console.error('找不到 Claude Code。請安裝 Claude 桌面版或
 console.log('Claude Code：' + exe);
 if (process.argv[2] === 'auth' && process.argv[3] === 'login') console.log('瀏覽器會打開登入頁，用你的 Claude 帳號登入後回到這裡。\n');
 const env = { ...process.env }; delete env.ANTHROPIC_API_KEY;
-spawn(exe, process.argv.slice(2), { stdio: 'inherit', env, cwd: path.resolve('examples', 'demo-project') }).on('exit', c => process.exit(c ?? 0));
+spawn(exe, process.argv.slice(2), { stdio: 'inherit', env, cwd: path.dirname(path.dirname(fileURLToPath(import.meta.url))) }).on('exit', c => process.exit(c ?? 0));

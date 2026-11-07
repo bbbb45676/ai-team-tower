@@ -1453,6 +1453,14 @@ function log(a, text) {
   b.ver++;
 }
 function sysFeed(b, type, who, text) { b.feed.unshift({ t: now(), who, type, text }); if (b.feed.length > 60) b.feed.length = 60; b.ver++; }
+// 休息：同一人至少隔 8 分鐘，同一棟每分鐘最多一人離座，避免大家一直搭電梯去倒咖啡把電梯塞住
+const BREAK_GAP_AGENT = 8 * 60000, BREAK_GAP_TOWER = 60000;
+function canBreak(a) { const n = Date.now(); return n - (a.lastBreak || 0) >= BREAK_GAP_AGENT && n - (a.b.lastBreak || 0) >= BREAK_GAP_TOWER; }
+function goBreak(a, text, dur) {
+  a.lastBreak = a.b.lastBreak = Date.now();
+  const lg = a.b.rooms.find(x => x.type === 'lounge');
+  a.steps.push(doStep(a, lg, 'coffee', dur, text, 'lounge', '去倒咖啡', { log: false }));
+}
 function plan(a) {
   if (LIVE) return livePlan(a);
   const b = a.b, r = a.room, T = r.type;
@@ -1475,7 +1483,7 @@ function plan(a) {
     else handoff(a, tr, '交付：' + HAND[T]());
     return;
   }
-  if (p < 0.22) { const lg = b.rooms.find(x => x.type === 'lounge'); a.steps.push(doStep(a, lg, 'coffee', R(4, 7), '喝咖啡', 'lounge', '去倒咖啡', { log: false })); return; }
+  if (p < 0.19 && canBreak(a)) { goBreak(a, '喝咖啡', R(4, 7)); return; }
   const opts = ACTS[T]; let k = Math.random() * opts.reduce((s, o) => s + o[2], 0), o = opts[0];
   for (const x of opts) { k -= x[2]; if (k <= 0) { o = x; break; } }
   a.steps.push(doStep(a, r, o[0], R(5, 10), pick(TXT[o[3]]), o[1]));
@@ -2753,7 +2761,7 @@ function liveDo(a, act, text, spot = 'desk', dur) {
 function livePlan(a) {
   // 沒有真實工作時只做日常動作，不產生假的工作內容
   const r = Math.random();
-  if (!isBusy(a) && r < 0.12) { const lg = a.b.rooms.find(x => x.type === 'lounge'); a.steps.push(doStep(a, lg, 'coffee', R(5, 9), '休息一下', 'lounge', '去倒咖啡', { log: false })); return; }
+  if (!isBusy(a) && r < 0.05 && canBreak(a)) { goBreak(a, '休息一下', R(5, 9)); return; }
   a.steps.push(doStep(a, a.room, 'idle', R(5, 10), '', 'desk', '', { log: false }));
 }
 function applyActivity(ev) {

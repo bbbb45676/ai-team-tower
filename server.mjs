@@ -109,24 +109,22 @@ async function* mockQuery({ prompt, options }) {
 }
 
 /* ---------- 找到可用的 Claude Code 執行檔 ---------- */
+// Claude 桌面版內建的 Claude Code 放在哪：Windows、Mac、Linux 各不同
+const DESKTOP_CC = process.platform === 'win32' ? path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'claude-code')
+  : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support', 'Claude', 'claude-code')
+  : path.join(os.homedir(), '.config', 'Claude', 'claude-code');
 function findClaude() {
   if (process.env.CLAUDE_CODE_PATH && fs.existsSync(process.env.CLAUDE_CODE_PATH)) return process.env.CLAUDE_CODE_PATH;
-  const base = path.join(os.homedir(), 'AppData', 'Roaming', 'Claude', 'claude-code');
-  try {
-    const vers = fs.readdirSync(base).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    for (const v of vers) {
-      const vd = path.join(base, v);
-      for (const sub of fs.readdirSync(vd)) {
-        const exe = path.join(vd, sub, process.platform === 'win32' ? 'claude.exe' : 'claude');
-        if (fs.existsSync(exe)) return exe;
-      }
-    }
-  } catch { /* 沒有桌面版內建的 Claude Code */ }
-  // 再找系統 PATH 上的 claude（npm 全域安裝或官方安裝程式）
-  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
-    const exe = path.join(dir, process.platform === 'win32' ? 'claude.exe' : 'claude');
-    if (dir && fs.existsSync(exe)) return exe;
+  const name = process.platform === 'win32' ? 'claude.exe' : 'claude';
+  const list = d => { try { return fs.readdirSync(d); } catch { return []; } };
+  for (const v of list(DESKTOP_CC).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))) {
+    const vd = path.join(DESKTOP_CC, v);
+    for (const exe of [path.join(vd, name), ...list(vd).map(sub => path.join(vd, sub, name))]) if (fs.existsSync(exe)) return exe;
   }
+  // 再找 PATH 和常見的安裝位置（npm 全域安裝、官方安裝程式、Homebrew）；從 Finder 開的 Mac 程式 PATH 很短，所以另外列出來
+  const dirs = String(process.env.PATH || '').split(path.delimiter);
+  if (process.platform !== 'win32') dirs.push(path.join(os.homedir(), '.local', 'bin'), path.join(os.homedir(), '.claude', 'local'), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin');
+  for (const dir of dirs) { const exe = path.join(dir, name); if (dir && fs.existsSync(exe)) return exe; }
   return undefined;
 }
 const CLAUDE_PATH = findClaude();
@@ -202,6 +200,19 @@ async function handleMcp(req, res, runId) {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'method not found' } }));
 }
+
+// 開一個看得到的視窗跑指令：Windows 用命令提示字元、Mac 用「終端機」，其他系統在背景跑
+function runInWindow(title, cmd, cwd) {
+  if (process.platform === 'win32') return spawn(`start "${title}" cmd /k ${cmd}`, { cwd, shell: true, detached: true, stdio: 'ignore', windowsHide: false }).unref();
+  if (process.platform === 'darwin') {
+    const sh = `cd '${cwd.replace(/'/g, `'\\''`)}' && ${cmd}`;
+    const as = sh.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return spawn('osascript', ['-e', `tell application "Terminal" to do script "${as}"`, '-e', 'tell application "Terminal" to activate'], { detached: true, stdio: 'ignore' }).unref();
+  }
+  spawn(cmd, { cwd, shell: true, detached: true, stdio: 'ignore' }).unref();
+}
+// 用系統的檔案管理員打開（Windows 檔案總管、Mac Finder）
+const openInFiles = f => spawn(process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open', [f], { detached: true, stdio: 'ignore' }).unref();
 
 /* ---------- 部門設定 ---------- */
 const DEPTS = {
@@ -1617,7 +1628,7 @@ const server = http.createServer(async (req, res) => {
           const rel = String(bd.path || '').trim(), f = path.resolve(b.dir, rel || '.');
           if (!inside(f) && f !== b.dir) return send(res, 400, { error: '只能打開專案資料夾裡的東西' });
           if (!fs.existsSync(f)) return send(res, 404, { error: '找不到 ' + rel });
-          spawn('explorer.exe', [f], { detached: true, stdio: 'ignore' }).unref();
+          openInFiles(f);
           return send(res, 200, { ok: true });
         }
         if (om[2] === 'workshop') {
@@ -1627,7 +1638,7 @@ const server = http.createServer(async (req, res) => {
             const svcs = w.services || (w.start ? [{ check: w.check || w.url, cmd: w.start }] : []);
             if (!svcs.length) return send(res, 409, { error: w.offHint || `${w.name}沒有開著` });
             // 只啟動沒開的服務，各開一個看得到的視窗（不會重開你已經開著的）
-            for (const sv of svcs) { let on = false; try { on = (await fetch(sv.check, { signal: AbortSignal.timeout(1500) })).status < 500; } catch {} if (!on) spawn(`start "${sv.title || w.name}" cmd /k ${sv.cmd}`, { cwd: path.resolve(b.dir, w.cwd || '.'), shell: true, detached: true, stdio: 'ignore', windowsHide: false }).unref(); }
+            for (const sv of svcs) { let on = false; try { on = (await fetch(sv.check, { signal: AbortSignal.timeout(1500) })).status < 500; } catch {} if (!on) runInWindow(sv.title || w.name, sv.cmd, path.resolve(b.dir, w.cwd || '.')); }
             let ok = false; for (let i = 0; i < 90 && !ok; i++) { await new Promise(r => setTimeout(r, 500)); ok = await up(); }
             if (!ok) return send(res, 504, { error: `${w.name}啟動中，還沒好；過幾秒再按一次` });
           }

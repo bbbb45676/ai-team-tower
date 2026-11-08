@@ -2641,7 +2641,44 @@ function jobTitleOf(a) {
   const tid = (a.jobKey || '').split(':')[0]; if (!tid) return '';
   return LT.get(tid)?.title || AP.get(a.b.sid)?.runs.find(r => r.id === tid)?.title || (tid.startsWith('goals-') ? '目標規劃' : '');
 }
+// 看網頁時，大螢幕顯示伺服器截到的真實網頁畫面；截不到就照舊顯示工作紀錄
+const PSHOT = new Map();
+function pageShotOf(a) {
+  const m = !a.waiting && isBusy(a) && /^WebFetch:\s*(\S+)/.exec(a.text || ''); if (!m) return null;
+  let e = PSHOT.get(m[1]);
+  if (e && e.failAt && Date.now() - e.failAt > 60000) { PSHOT.delete(m[1]); e = null; }
+  if (!e) {
+    e = { img: null, failAt: 0, t0: 0 }; PSHOT.set(m[1], e);
+    const im = new Image(); im.onload = () => { e.img = im; }; im.onerror = () => { e.failAt = Date.now(); };
+    im.src = '/api/pageshot?u=' + encodeURIComponent(m[1]);
+  }
+  return e.failAt ? null : e;
+}
+function drawPageScreen(c, w, h, a, t, e) {
+  const s = h / 400, top = 34 * s, bot = h - 30 * s, url = (/^WebFetch:\s*(\S+)/.exec(a.text || '') || [])[1] || '';
+  c.fillStyle = '#ffffff'; c.fillRect(0, 0, w, h);
+  c.fillStyle = '#e9ecf1'; c.fillRect(0, 0, w, top);
+  ['#ff5f57', '#febc2e', '#28c840'].forEach((cc, i) => { c.fillStyle = cc; c.beginPath(); c.arc((16 + i * 14) * s, 17 * s, 4.5 * s, 0, 7); c.fill(); });
+  c.fillStyle = '#ffffff'; c.beginPath(); c.roundRect(64 * s, 7 * s, w - 82 * s, 20 * s, 10 * s); c.fill();
+  c.font = `500 ${11.5 * s}px "JetBrains Mono", ui-monospace, monospace`; c.fillStyle = '#5b6270';
+  c.save(); c.beginPath(); c.rect(64 * s, 0, w - 92 * s, top); c.clip(); c.fillText(url.replace(/^https?:\/\//, ''), 76 * s, 21 * s); c.restore();
+  c.save(); c.beginPath(); c.rect(0, top, w, bot - top); c.clip();
+  if (e.img) {
+    // 慢慢往下捲再捲回來，像在讀這一頁
+    if (!e.t0) e.t0 = t;
+    const ih = e.img.height * w / e.img.width, max = Math.max(0, ih - (bot - top)), off = max * (0.5 - 0.5 * Math.cos((t - e.t0) * 0.3));
+    c.drawImage(e.img, 0, top - off, w, ih);
+  } else {
+    c.fillStyle = '#3b82f6'; c.fillRect(0, top, w * (0.15 + 0.8 * ((t * 0.5) % 1)), 3 * s);
+    c.fillStyle = '#8a91a3'; c.font = `500 ${15 * s}px "Noto Sans TC", sans-serif`; c.textAlign = 'center'; c.fillText('正在打開網頁…', w / 2, (top + bot) / 2); c.textAlign = 'left';
+  }
+  c.restore();
+  c.fillStyle = '#14161c'; c.fillRect(0, bot, w, h - bot);
+  c.font = `600 ${13 * s}px "Noto Sans TC", sans-serif`; c.fillStyle = '#5fd38d';
+  const now = '正在：看網頁 ' + url.replace(/^https?:\/\/(www\.)?/, ''); c.fillText((now.length > 52 ? now.slice(0, 51) + '…' : now) + (Math.floor(t * 2) % 2 ? ' ▍' : ''), 18 * s, bot + 20 * s);
+}
 function drawRealScreen(c, w, h, a, t) {
+  { const pg = pageShotOf(a); if (pg) return drawPageScreen(c, w, h, a, t, pg); }
   const s = h / 400, pad = 18 * s, lines = (a.jobKey && tlog.get(a.jobKey)) || [];
   c.fillStyle = '#14161c'; c.fillRect(0, 0, w, h);
   c.fillStyle = '#1d2029'; c.fillRect(0, 0, w, 34 * s);

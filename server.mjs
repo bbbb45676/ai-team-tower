@@ -12,6 +12,7 @@ import readline from 'node:readline';
 import { snapshot, backupRoot, backupDirOf } from './lib/backup.mjs';
 import { isReadOnlyCommand } from './lib/readonly.mjs';
 import { browserConfig, browserUp, ensureBrowser } from './lib/towerBrowser.mjs';
+import { createPageShot } from './lib/pageShot.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = process.env.TOWER_CONFIG ? path.resolve(process.env.TOWER_CONFIG) : path.join(ROOT, 'tower.config.json');
@@ -67,12 +68,12 @@ async function* mockQuery({ prompt, options }) {
   const cwd = options.cwd;
   const steps = planning
     ? [['Glob', { pattern: '**/*' }], ['Read', { file_path: cwd + '/README.md' }], ['Grep', { pattern: 'TODO' }]]
-    : [['Read', { file_path: cwd + '/README.md' }], ['Write', { file_path: cwd + '/index.html' }], ['Edit', { file_path: cwd + '/style.css' }], ['Bash', { command: 'npx serve -l 5000 --no-clipboard', description: '啟動預覽' }], ['Edit', { file_path: cwd + '/index.html' }]];
-  for (const [name, input] of steps) {
-    await sleep(1200 + Math.random() * 800);
+    : [['Read', { file_path: cwd + '/README.md' }], ['WebFetch', { url: 'https://developer.mozilla.org/zh-TW/docs/Web/HTML' }], ['Write', { file_path: cwd + '/index.html' }], ['Edit', { file_path: cwd + '/style.css' }], ['Bash', { command: 'npx serve -l 5000 --no-clipboard', description: '啟動預覽' }], ['Edit', { file_path: cwd + '/index.html' }]];
+  for (const [i, [name, input]] of steps.entries()) {
+    await sleep(1200 + Math.random() * 800 + (steps[i - 1]?.[0] === 'WebFetch' ? 8000 : 0));
     if (options.abortController.signal.aborted) throw new Error('任務已取消');
     if (name === 'Bash') { const d = await options.canUseTool(name, input, { signal: options.abortController.signal }); if (d.behavior !== 'allow') { yield { type: 'assistant', session_id: sid, message: { content: [{ type: 'text', text: '指令被拒絕，改用其他方式驗證。' }] } }; continue; } }
-    yield { type: 'assistant', session_id: sid, message: { content: [{ type: 'text', text: '接著' + ({ Glob: '看一下專案有哪些檔案', Read: '讀取說明文件', Grep: '搜尋待辦標記', Write: '建立頁面', Edit: '調整內容', Bash: '啟動預覽確認畫面' }[name] || '處理') + '。' }, { type: 'tool_use', id: crypto.randomUUID(), name, input }] } };
+    yield { type: 'assistant', session_id: sid, message: { content: [{ type: 'text', text: '接著' + ({ Glob: '看一下專案有哪些檔案', Read: '讀取說明文件', Grep: '搜尋待辦標記', Write: '建立頁面', Edit: '調整內容', Bash: '啟動預覽確認畫面', WebFetch: '看參考網站' }[name] || '處理') + '。' }, { type: 'tool_use', id: crypto.randomUUID(), name, input }] } };
     yield { type: 'user', session_id: sid, message: { content: [{ type: 'tool_result', content: name === 'Read' ? '# 示範專案\n這是測試用的專案資料夾。' : name === 'Glob' ? 'README.md' : '完成', is_error: false }] } };
   }
   let result;
@@ -328,7 +329,7 @@ function toolSummary(name, input = {}) {
   if (name === 'Grep') return `Grep "${String(input.pattern || '').slice(0, 40)}"`;
   if (name === 'Glob') return `Glob ${String(input.pattern || '').slice(0, 40)}`;
   if (name === 'WebSearch') return `WebSearch: ${String(input.query || '').slice(0, 60)}`;
-  if (name === 'WebFetch') return `WebFetch: ${String(input.url || '').slice(0, 60)}`;
+  if (name === 'WebFetch') { PAGESHOT.allow(input.url); return `WebFetch: ${String(input.url || '').slice(0, 60)}`; }
   if (name === 'TodoWrite') return '更新待辦清單';
   return name;
 }
@@ -1180,6 +1181,9 @@ const BROWSER_CAPS = new Set(CFG.browserCaps || ['browser', 'owner', 'local-mode
 const LOCAL_ONLY = new Set(['local-model']);
 // 大樓專用瀏覽器：這些能力改由背景部門自己用大樓瀏覽器做，不用再交給桌面版 Claude
 const BROWSER = browserConfig(CFG, ROOT);
+// 人物看網頁時，放大螢幕顯示那個網頁的真實畫面（另開無頭瀏覽器、空的設定檔，不帶任何登入）
+const PAGESHOT = createPageShot(BROWSER.exe, path.join(os.tmpdir(), 'ai-team-tower-pageshot-' + PORT));
+process.on('exit', () => PAGESHOT.close());
 const AUTO_BROWSER = CFG.autoBrowserCaps || {};
 function browserHostsOf(r) {
   const req = (r.requires || []).filter(c => BROWSER_CAPS.has(c));
@@ -1550,6 +1554,7 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith('/api/')) {
       if (req.method !== 'GET' && req.headers['x-tower'] !== '1') return send(res, 403, { error: '拒絕跨站請求' });
       if (p === '/api/state') return send(res, 200, state(ext));
+      if (p === '/api/pageshot') { const jpg = await PAGESHOT.get(url.searchParams.get('u')); if (!jpg) return send(res, 404, { error: '沒有這個網頁的畫面' }); res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=600' }); return res.end(jpg); }
       if (p === '/api/auth' && req.method === 'POST') {
         const bd = await body(req);
         if (bd.clearKey) delete LOCAL.apiKey;
